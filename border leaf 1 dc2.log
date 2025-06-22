@@ -1,0 +1,325 @@
+﻿root@SGIX-DC2-BL1> show configuration |no-more 
+## Last commit: 2025-04-28 07:48:03 UTC by root
+version 23.4R2-S2.1;
+system {
+    host-name SGIX-DC2-BL1;
+    root-authentication {
+        encrypted-password "$6$Rqp68mmt$PTdIOgKC9CO/n6ESYhBNGlft53BMk4xjq/nt..AwkBBzBU7566u0KvpZ4kJN0ZHFK3c3nM4NjN5rekBSKQ9P3."; ## SECRET-DATA
+    }
+    arp {
+        aging-timer 5;
+    }
+    syslog {
+        file interactive-commands {
+            interactive-commands any;
+        }
+        file messages {
+            any notice;
+            authorization info;
+        }
+    }
+    processes {
+        dhcp-service {
+            traceoptions {
+                file dhcp_logfile size 10m;
+                level all;
+                flag packet;
+            }
+        }
+    }
+}
+chassis {
+    aggregated-devices {
+        ethernet {
+            device-count 10;
+        }
+    }
+}
+interfaces {
+    ge-0/0/0 {
+        description "CONNECTED TO DC2 Spine ge-0/0/0";
+        unit 0 {
+            family inet {
+                address 172.16.211.2/30;
+            }
+        }
+    }
+    inactive: ge-0/0/4 {
+        ether-options {
+            802.3ad ae3;
+        }
+    }
+    inactive: ge-0/0/5 {
+        ether-options {
+            802.3ad ae3;
+        }
+    }
+    ge-0/0/6 {
+        description "New Link For EVPN CONNCTED TO DC1 BL1 ge-0/0/6";
+        unit 0 {
+            family inet {
+                address 10.80.11.2/30;
+            }
+        }
+    }
+    inactive: ge-0/0/7 {
+        description "CONNECTED TO DC2 BL1 ge-0/0/7";
+        ether-options {
+            802.3ad ae2;
+        }
+    }
+    ge-0/0/9 {
+        ether-options {
+            802.3ad ae0;
+        }
+    }
+    ae0 {
+        esi {
+            00:00:00:00:00:00:00:00:00:02;
+            all-active;
+            df-election-type {
+                preference {
+                    value 3000;
+                }
+            }
+        }
+        aggregated-ether-options {
+            lacp {
+                active;
+                periodic slow;
+                system-id 00:00:00:00:00:02;
+            }
+        }
+        unit 0 {
+            family ethernet-switching {
+                interface-mode trunk;
+                vlan {
+                    members vlan-4064;
+                }
+            }
+        }
+    }
+    inactive: ae2 {
+        unit 0 {
+            family ethernet-switching {
+                interface-mode trunk;
+                vlan {
+                    members vlan-4064;
+                }
+            }
+        }
+    }
+    ae3 {
+        unit 0 {
+            family ethernet-switching {
+                interface-mode trunk;
+                vlan {
+                    members vlan-4064;
+                }
+            }
+        }
+    }
+    fxp0 {
+        unit 0 {
+            family inet {
+                dhcp {
+                    vendor-id Juniper-ex9214-VM67F8D56F16;
+                }
+            }
+            family inet6 {
+                dhcpv6-client {
+                    client-type stateful;
+                    client-ia-type ia-na;
+                    client-identifier duid-type duid-ll;
+                    vendor-id Juniper:ex9214:VM67F8D56F16;
+                }
+            }
+        }
+    }
+    lo0 {
+        unit 0 {
+            family inet {
+                address 100.100.200.11/32;
+            }
+        }
+    }
+}
+multi-chassis {
+    mc-lag {
+        consistency-check;
+    }
+}
+policy-options {
+    policy-statement EXPORT-DIRECT-ROUTES {
+        term MATCH-DIRECT {
+            from protocol direct;
+            then accept;
+        }
+    }
+    policy-statement overlay-import {
+        term ACCEPT-DC1 {
+            from community comm_dc1;
+            then accept;
+        }
+        term ACCEPT-DC2 {
+            from community comm_dc2;
+            then accept;
+        }
+        term ACCEPT-SHARED-4064 {
+            from community [ shared-4064-fm-dc1 shared-4064-fm-dc2 ];
+            then accept;
+        }
+    }
+    policy-statement pplb {
+        then {
+            load-balance per-flow;
+        }
+    }
+    policy-statement underlay-export {
+        term MATCH-LOOPBACK {
+            from {
+                route-filter 100.100.100.0/24 orlonger;
+                route-filter 100.100.200.0/24 orlonger;
+            }
+            then {
+                community add inter-dc2-underlay;
+                accept;
+            }
+        }
+        term DEFAULT {
+            then reject;
+        }
+    }
+    policy-statement underlay-import {
+        term LOWER-DC2-LOOPBACK-READVERTISE {
+            from {
+                community inter-dc1-underlay;
+                route-filter 100.100.200.0/24 orlonger;
+            }
+            then {
+                local-preference subtract 10;
+                accept;
+            }
+        }
+        term MATCH-LOOPBACK {
+            from {
+                route-filter 100.100.100.0/24 orlonger;
+                route-filter 100.100.200.0/24 orlonger;
+            }
+            then accept;
+        }
+        term DEFAULT {
+            then reject;
+        }
+    }
+    community comm_dc1 members target:65099:999;
+    community comm_dc2 members target:65299:999;
+    community inter-dc1-underlay members 65099:111;
+    community inter-dc2-underlay members 65099:222;
+    community shared-4064-fm-dc1 members target:65099:4064;
+    community shared-4064-fm-dc2 members target:65299:4064;
+    community shared-888-fm-dc1 members target:65099:888;
+    community shared-888-fm-dc2 members target:65299:888;
+}
+routing-options {
+    router-id 100.100.200.11;
+    autonomous-system 65211;
+    forwarding-table {
+        export pplb;
+    }
+}
+protocols {
+    router-advertisement {
+        interface fxp0.0 {
+            managed-configuration;
+        }
+    }
+    bgp {
+        group underlay {
+            type external;
+            import underlay-import;
+            export [ EXPORT-DIRECT-ROUTES underlay-export ];
+            local-as 65211;
+            multipath {
+                multiple-as;
+            }
+            neighbor 172.16.211.1 {
+                peer-as 65201;
+            }
+            neighbor 10.80.11.1 {
+                description "DC2 to DC1 underlay";
+                peer-as 65011;
+            }
+        }
+        group evpn-fabric {
+            type external;
+            multihop {
+                no-nexthop-change;
+            }
+            local-address 100.100.200.11;
+            family evpn {
+                signaling;
+            }
+            local-as 65211;
+            multipath {
+                multiple-as;
+            }
+            neighbor 100.100.200.1 {
+                peer-as 65201;
+            }
+        }
+        group dci-overlay {
+            type external;
+            description "Group for overlay EBGP peering to remote DC";
+            multihop {
+                no-nexthop-change;
+            }
+            local-address 100.100.200.11;
+            family evpn {
+                signaling;
+            }
+            local-as 65211;
+            multipath {
+                multiple-as;
+            }
+            neighbor 100.100.100.11 {
+                peer-as 65011;
+            }
+            neighbor 100.100.100.12 {
+                peer-as 65012;
+            }
+        }
+    }
+    evpn {
+        encapsulation vxlan;
+        multicast-mode ingress-replication;
+        vni-options {
+            vni 4064 {
+                vrf-target target:65299:4064;
+            }
+        }
+        extended-vni-list all;
+    }
+    lldp {
+        interface all;
+    }
+    lldp-med {
+        interface all;
+    }
+}
+switch-options {
+    vtep-source-interface lo0.0;
+    route-distinguisher 100.100.200.11:1;
+    vrf-import overlay-import;
+    vrf-target target:65299:999;
+}
+vlans {
+    vlan-4064 {
+        vlan-id 4064;
+        vxlan {
+            vni 4064;
+            inactive: ingress-node-replication;
+        }
+    }
+}
+
